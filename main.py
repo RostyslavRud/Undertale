@@ -7,6 +7,8 @@ player = Rect(50, 500, 70, 70)
 
 class soul():# створення гравця у режимі битви
     pass
+class Keys(): # створення ключів для проходження
+    pass
 class button(): #
     pass
 class fight(): #відкриває вікно битви та логіка
@@ -18,6 +20,7 @@ class labirint: #створення самої локації
 class boss_good_ending: #створення босса та його атак хп та інше на пацифісті
     pass
 class boss_bad_ending: #створення босса та його атак і хп на геноциді(більш складна версія)
+
     pass
 while True:
     for e in event.get():
