@@ -31,7 +31,14 @@ maze_map = [
     [1,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0,1],
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
 ]
-
+# 0 - підлога
+# 1 - стіна
+# 2 - ключ/монстр
+# 3 - двері
+# 4 - вихід
+# 5 - босс
+# 6 - секретний ключ
+# 7 - секретний босс
 kills_total = 0
 
 # ════════════════════════════════════════════
@@ -182,9 +189,8 @@ def boss_attack_walls(en, arena):
 def boss_attack_laser(en, arena):
     y = random.choice([arena.top+30,arena.top+70,arena.centery-20,
                        arena.centery+20,arena.bottom-70,arena.bottom-30])
-    for i,x in enumerate(range(arena.left,arena.right,18)):
-        en.bullets.append([float(arena.left-10),float(y),3.5,0.0,15,(255,200,0),i*2])
-
+    for i,x in enumerate(range(arena.left,arena.right,22)):
+        en.bullets.append([float(x),float(arena.top+5),0.0,0.8,18,(255,50,0),i*2])
 def boss_attack_spiral_fast(en, arena):
     cx,cy = arena.centerx,arena.centery
     for i in range(8):
@@ -522,8 +528,6 @@ class boss_good_ending:
             draw.circle(surf,b[5],(int(b[0]),int(b[1])),r)
 
 
-class boss_bad_ending:
-    pass
 
 
 # ════════════════════════════════════════════
@@ -690,6 +694,11 @@ class Keys:
         self.count = 0
     def add_key(self): self.count += 1
     def has_all(self): return self.count >= 2
+class secret_key:
+    def __init__(self):
+        self.count = 0
+    def add_key(self) : self.count += 1
+    def has_all(self): return self.count >= 1
 
 
 # ════════════════════════════════════════════
