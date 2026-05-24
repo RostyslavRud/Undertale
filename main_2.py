@@ -10,8 +10,8 @@ T = 60
 PLAYER_SIZE = 40
 
 maze_map = [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,7,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,6,0,1],
     [1,0,0,1,1,1,1,0,0,1,1,1,1,1,0,0,1,0,0,1,0,0,0,1],
     [1,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0,1],
     [1,0,0,1,0,0,1,1,1,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1],
@@ -31,14 +31,9 @@ maze_map = [
     [1,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0,1],
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
 ]
-# 0 - підлога
-# 1 - стіна
-# 2 - ключ/монстр
-# 3 - двері
-# 4 - вихід
-# 5 - босс
-# 6 - секретний ключ
-# 7 - секретний босс
+# 0=підлога 1=стіна 2=ключ 3=двері 4=вихід 5=бос
+# 6=секретний ключ 7=секретні двері (ведуть до секретного боса)
+
 kills_total = 0
 
 # ════════════════════════════════════════════
@@ -73,22 +68,92 @@ class soul:
         self.hp = 100
         self.max_hp = 100
         self.invincible = 0
+        # dash — ривок при натисканні SPACE
+        self.dash_timer = 0       # скільки фреймів триває ривок (>0 = дешимо)
+        self.dash_cd = 0          # кулдаун між ривками (3 секунди = 180 фреймів)
+        self.dash_dx = 0          # напрямок ривку по X
+        self.dash_dy = 0          # напрямок ривку по Y
+        self.DASH_DURATION = 10   # тривалість ривку в фреймах
+        self.DASH_SPEED = 18      # швидкість під час ривку
+        self.DASH_CD = 180        # кулдаун 3 секунди при 60fps
 
     def move(self, arena_rect):
         pressed = key.get_pressed()
-        if pressed[K_a]: self.x -= self.speed
-        if pressed[K_d]: self.x += self.speed
-        if pressed[K_w]: self.y -= self.speed
-        if pressed[K_s]: self.y += self.speed
+
+        # ── логіка dash ──────────────────────────────────
+        if self.dash_timer > 0:
+            # під час ривку — рухаємось у зафіксованому напрямку
+            self.x += self.dash_dx * self.DASH_SPEED
+            self.y += self.dash_dy * self.DASH_SPEED
+            self.dash_timer -= 1
+            # під час ривку душа невразлима
+            if self.invincible < self.dash_timer + 1:
+                self.invincible = self.dash_timer + 1
+        else:
+            # звичайний рух
+            if pressed[K_a]: self.x -= self.speed
+            if pressed[K_d]: self.x += self.speed
+            if pressed[K_w]: self.y -= self.speed
+            if pressed[K_s]: self.y += self.speed
+
+        # зменшуємо кулдаун
+        if self.dash_cd > 0:
+            self.dash_cd -= 1
+
+        # обмежуємо позицію межами арени
         self.x = max(arena_rect.left+self.size, min(arena_rect.right-self.size, self.x))
         self.y = max(arena_rect.top+self.size, min(arena_rect.bottom-self.size, self.y))
 
+    def try_dash(self):
+        """Спроба зробити ривок — спрацьовує тільки якщо кулдаун скінчився"""
+        if self.dash_cd > 0 or self.dash_timer > 0:
+            return  # кулдаун ще не скінчився
+        pressed = key.get_pressed()
+        # визначаємо напрямок ривку по WASD
+        dx = (1 if pressed[K_d] else 0) - (1 if pressed[K_a] else 0)
+        dy = (1 if pressed[K_s] else 0) - (1 if pressed[K_w] else 0)
+        if dx == 0 and dy == 0:
+            dy = -1  # якщо нічого не натиснуто — ривок вгору
+        # нормалізуємо діагональ щоб швидкість була однакова
+        length = math.hypot(dx, dy)
+        self.dash_dx = dx / length
+        self.dash_dy = dy / length
+        self.dash_timer = self.DASH_DURATION
+        self.dash_cd = self.DASH_CD
+
     def draw(self, surf):
-        if self.invincible % 6 < 3:
+        # під час ривку — блакитний колір, інакше звичайне мигання
+        if self.dash_timer > 0:
+            cx, cy, s = self.x, self.y, self.size
+            draw.circle(surf,(100,180,255),(cx-s//3,cy-s//4),s//2)
+            draw.circle(surf,(100,180,255),(cx+s//3,cy-s//4),s//2)
+            draw.polygon(surf,(100,180,255),[(cx-s//1.3,cy),(cx+s//1.3,cy),(cx,cy+s//1.1)])
+        elif self.invincible % 6 < 3:
             cx, cy, s = self.x, self.y, self.size
             draw.circle(surf,(220,30,30),(cx-s//3,cy-s//4),s//2)
             draw.circle(surf,(220,30,30),(cx+s//3,cy-s//4),s//2)
             draw.polygon(surf,(220,30,30),[(cx-s//1.3,cy),(cx+s//1.3,cy),(cx,cy+s//1.1)])
+
+    def draw_dash_cd(self, surf, bx, by):
+        """Малює індикатор кулдауну дешу під HP баром"""
+        f = font.SysFont(None, 24)
+        if kills_total < 2:
+            # dash ще не розблокований
+            txt = f.render("DASH [SPACE] — заблоковано",True,(80,80,80))
+            surf.blit(txt,(bx, by+26))
+        elif self.dash_cd <= 0:
+            txt = f.render("DASH [SPACE] — готово!",True,(100,180,255))
+            surf.blit(txt,(bx, by+26))
+            # маленький прогрес-бар (повний)
+            draw.rect(surf,(100,180,255),Rect(bx, by+46, 200, 6))
+        else:
+            secs = self.dash_cd / 60
+            txt = f.render(f"DASH [SPACE] — {secs:.1f}с",True,(120,120,120))
+            surf.blit(txt,(bx, by+26))
+            cd_w = 200
+            cd_r = 1 - self.dash_cd/self.DASH_CD
+            draw.rect(surf,(40,40,40),Rect(bx, by+46, cd_w, 6))
+            draw.rect(surf,(100,180,255),Rect(bx, by+46, int(cd_w*cd_r), 6))
 
     def take_damage(self, dmg):
         if self.invincible <= 0:
@@ -187,10 +252,9 @@ def boss_attack_walls(en, arena):
         en.bullets.append([float(x),float(arena.bottom),0.0,-2.0,12,(255,50,50)])
 
 def boss_attack_laser(en, arena):
-    y = random.choice([arena.top+30,arena.top+70,arena.centery-20,
-                       arena.centery+20,arena.bottom-70,arena.bottom-30])
     for i,x in enumerate(range(arena.left,arena.right,22)):
         en.bullets.append([float(x),float(arena.top+5),0.0,0.8,18,(255,50,0),i*2])
+
 def boss_attack_spiral_fast(en, arena):
     cx,cy = arena.centerx,arena.centery
     for i in range(8):
@@ -388,6 +452,8 @@ class boss_good_ending:
         self.current_attack = 0
         self.phase_timer = 0
         self.reborn_flash = 0
+        self.last_stand = False   # True = фінальна серія атак
+        self.last_stand_idx = 0   # індекс поточної атаки у серії
         self._set_normal_attacks()
 
     def _set_normal_attacks(self):
@@ -408,7 +474,28 @@ class boss_good_ending:
         self.current_attack = 0
         self.bullets.clear()
         self.reborn_flash = 60
+        self.last_stand = False      # last stand ще не активований
+        self.last_stand_idx = 0      # індекс атаки у фінальній серії
         self._set_evil_attacks()
+
+    def activate_last_stand(self, soul_obj):
+        """
+        Активується коли HP доходить до 0 у злій формі.
+        Залишає 1 HP, повністю відновлює HP гравця,
+        і бос починає всі атаки підряд без перерви.
+        """
+        self.hp = 1
+        self.last_stand = True
+        self.last_stand_idx = 0
+        soul_obj.hp = soul_obj.max_hp  # повне відновлення HP гравця
+
+    def start_last_stand_attack(self, arena):
+        """Запускає наступну атаку у фінальній серії (всі підряд)"""
+        self.bullets.clear()
+        self.attacks[self.last_stand_idx % len(self.attacks)](self, arena)
+        self.last_stand_idx += 1
+        self.phase_timer = 120  # коротший час між атаками
+        self.attack_phase = "enemy_turn"
 
     def world_rect(self):
         return Rect(self.col*T+2,self.row*T+2,T-4,T-4)
@@ -490,7 +577,10 @@ class boss_good_ending:
 
         if self.evil_form:
             f3 = font.SysFont(None,22)
-            warn = f3.render("ПЕРЕРОДЖЕННЯ",True,(255,80,80))
+            if self.last_stand:
+                warn = f3.render("⚡ ОСТАННЯ АТАКА! ⚡",True,(255,255,0))
+            else:
+                warn = f3.render("ПЕРЕРОДЖЕННЯ",True,(255,80,80))
             surf.blit(warn,(ex-warn.get_width()//2,ey-110))
 
     def can_spare(self):
@@ -528,6 +618,124 @@ class boss_good_ending:
             draw.circle(surf,b[5],(int(b[0]),int(b[1])),r)
 
 
+class secret_boss:
+    """
+    Несправний комп'ютер — секретний бос.
+    Знаходиться за секретними дверима (7).
+    Не можна перемогти — він ламає гру:
+      - при 1 HP видаляє кнопку FIGHT
+      - при 1 ACT до помилування видаляє MERCY
+      - після 10 атак — прощальне повідомлення і quit()
+    """
+    def __init__(self, col, row):
+        self.col = col
+        self.row = row
+        self.name = "Несправний комп'ютер"
+        self.hp = 30           # мало HP щоб швидко побачити як зникає кнопка
+        self.max_hp = 30
+        self.color = (0, 200, 80)
+        self.alive = True
+        self.spared = False
+        self.act_count = 0
+        self.attack_phase = "player_turn"
+        self.bullets = []
+        self.current_attack = 0
+        self.phase_timer = 0
+        self.attacks_survived = 0
+        self.fight_removed = False
+        self.mercy_removed = False
+        self.attacks = [
+            attack_rain, attack_spiral, attack_sides, attack_cross,
+            boss_attack_walls, boss_attack_spiral_fast, boss_attack_rain_heavy,
+            boss_evil_walls, boss_evil_spiral, boss_evil_cage
+        ]
+
+    def world_rect(self):
+        return Rect(self.col*T+5, self.row*T+5, T-10, T-10)
+
+    def trigger_rect(self):
+        return Rect((self.col-1)*T, self.row*T, T*3, T)
+
+    def draw_world(self, surf, ox, oy):
+        if not self.alive: return
+        r = self.world_rect()
+        draw.rect(surf, self.color, Rect(r.x+ox,r.y+oy,r.w,r.h), border_radius=6)
+        f = font.SysFont(None,18)
+        txt = f.render("???",True,(0,0,0))
+        surf.blit(txt,(r.x+ox+r.w//2-txt.get_width()//2, r.y+oy+r.h//2-txt.get_height()//2))
+
+    def draw_battle(self, surf):
+        ex,ey = SCREEN_W//2, 170
+        # мерехтливий зелений прямокутник як екран комп'ютера
+        flicker = random.randint(0,30)
+        c = (0, min(255,180+flicker), min(255,60+flicker))
+        draw.rect(surf, c, Rect(ex-70,ey-50,140,100), border_radius=4)
+        draw.rect(surf,(0,255,100),Rect(ex-70,ey-50,140,100),2,border_radius=4)
+        f = font.SysFont(None,22)
+        # текст як код на екрані
+        lines = ["ERROR: 0x4E4F","ACCESS DENIED","SYSTEM FAILURE"]
+        for i,line in enumerate(lines):
+            t = f.render(line,True,(0,0,0))
+            surf.blit(t,(ex-t.get_width()//2, ey-35+i*22))
+
+        # ім'я
+        fn = font.SysFont(None,28)
+        name_txt = fn.render(self.name,True,(0,255,100))
+        surf.blit(name_txt,(ex-name_txt.get_width()//2, ey-75))
+
+        # HP бар — але він не зменшується нижче 1
+        bar_w = 300
+        hp_r = max(0, self.hp/self.max_hp)
+        bar_y = ey+60
+        draw.rect(surf,(60,60,60),Rect(ex-bar_w//2,bar_y,bar_w,12))
+        draw.rect(surf,(0,200,80),Rect(ex-bar_w//2,bar_y,int(bar_w*hp_r),12))
+        f2 = font.SysFont(None,24)
+        t2 = f2.render(f"HP {self.hp}/{self.max_hp}",True,(0,200,80))
+        surf.blit(t2,(ex-t2.get_width()//2, bar_y+14))
+
+        # лічильник атак
+        f3 = font.SysFont(None,22)
+        survived_txt = f3.render(f"Атак пережито: {self.attacks_survived}/10",True,(150,255,150))
+        surf.blit(survived_txt,(ex-survived_txt.get_width()//2, bar_y+32))
+
+    def can_spare(self):
+        return self.act_count >= 3 and not self.mercy_removed
+
+    def start_attack(self, arena):
+        self.bullets.clear()
+        self.attacks[self.current_attack % len(self.attacks)](self, arena)
+        self.current_attack += 1
+        self.phase_timer = 160
+        self.attack_phase = "enemy_turn"
+
+    def update_attack(self, arena, soul_obj):
+        for b in self.bullets[:]:
+            if len(b)>6 and b[6]>0:
+                b[6] -= 1; continue
+            b[0]+=b[2]; b[1]+=b[3]
+            br = Rect(b[0]-5,b[1]-5,10,10)
+            if soul_obj.invincible<=0 and br.colliderect(soul_obj.get_rect()):
+                soul_obj.take_damage(b[4])
+                self.bullets.remove(b)
+            elif not arena.colliderect(br):
+                self.bullets.remove(b)
+        self.phase_timer -= 1
+        if self.phase_timer <= 0:
+            self.bullets.clear()
+            self.attack_phase = "player_turn"
+            self.attacks_survived += 1  # гравець пережив ще одну атаку
+
+    def draw_bullets(self, surf):
+        for b in self.bullets:
+            if len(b)>6 and b[6]>0: continue
+            draw.circle(surf,b[5],(int(b[0]),int(b[1])),6)
+
+    def get_spawn_pos(self):
+        return float(self.col*T+(T-PLAYER_SIZE)//2), float((self.row+2)*T+(T-PLAYER_SIZE)//2)
+
+
+class boss_bad_ending:
+    pass
 
 
 # ════════════════════════════════════════════
@@ -561,6 +769,10 @@ class fight:
             return
         if self.state == "reborn_pause":
             return
+        # SPACE — dash доступний під час атаки ворога і тільки після 2 вбивств
+        if e.key == K_SPACE and self.state == "enemy_attack" and kills_total >= 2:
+            self.soul.try_dash()
+            return
         if self.state == "buttons":
             self.buttons.handle(e)
             if e.key == K_RETURN:
@@ -570,20 +782,38 @@ class fight:
                     if (self.is_boss and kills_total > 0
                             and isinstance(self.enemy,boss_good_ending)
                             and not self.enemy.evil_form):
+                        # геноцид: 1 удар → пауза → переродження
                         self.enemy.hp = 0
                         self.message = ""
                         self.message_timer = 0
                         self.state = "reborn_pause"
                         self.reborn_timer = 120
+                    elif (self.is_boss and isinstance(self.enemy,boss_good_ending)
+                            and self.enemy.evil_form
+                            and self.enemy.last_stand):
+                        # last stand активований — тепер можна вбити
+                        self.enemy.hp = 0
+                        self.result = "win_kill"
+                        self.state = "result"
+                        self.waiting_confirm = True
                     else:
                         dmg = random.randint(20,40) if self.is_boss else random.randint(15,30)
                         self.enemy.hp -= dmg
                         self.message = f"Завдано {dmg} шкоди!"
                         self.message_timer = 60
                         if self.enemy.hp <= 0:
-                            self.result = "win_kill"
-                            self.state = "result"
-                            self.waiting_confirm = True
+                            # злоформа без last_stand → активуємо last stand
+                            if (self.is_boss and isinstance(self.enemy,boss_good_ending)
+                                    and self.enemy.evil_form and not self.enemy.last_stand):
+                                self.enemy.activate_last_stand(self.soul)
+                                self.message = "ОСТАННІЙ РУБІж! HP відновлено!"
+                                self.message_timer = 100
+                                self.state = "enemy_attack"
+                                self.enemy.start_last_stand_attack(self.arena)
+                            else:
+                                self.result = "win_kill"
+                                self.state = "result"
+                                self.waiting_confirm = True
                         else:
                             self.state = "enemy_attack"
                             self.enemy.start_attack(self.arena)
@@ -634,7 +864,16 @@ class fight:
             self.soul.move(self.arena)
             self.enemy.update_attack(self.arena,self.soul)
             if self.enemy.attack_phase == "player_turn":
-                self.state = "buttons"
+                # last stand — запускаємо наступну атаку тільки якщо не всі відіграні
+                if (self.is_boss and isinstance(self.enemy,boss_good_ending)
+                        and self.enemy.evil_form and self.enemy.last_stand):
+                    # всі атаки відіграні (5 атак) — повертаємо кнопки
+                    if self.enemy.last_stand_idx >= len(self.enemy.attacks):
+                        self.state = "buttons"
+                    else:
+                        self.enemy.start_last_stand_attack(self.arena)
+                else:
+                    self.state = "buttons"
             if self.soul.hp <= 0:
                 self.result = "lose"
                 self.state = "result"
@@ -674,6 +913,8 @@ class fight:
         draw.rect(surf,(60,60,60),Rect(bx,by,bar_w,18))
         draw.rect(surf,(80,220,80),Rect(bx,by,int(bar_w*hp_r),18))
         surf.blit(f2.render(f"{self.soul.hp}/{self.soul.max_hp}",True,(255,255,255)),(bx+bar_w+10,by+2))
+        # індикатор dash кулдауну
+        self.soul.draw_dash_cd(surf, bx, by)
 
         if self.state == "buttons":
             self.buttons.draw(surf)
@@ -689,21 +930,220 @@ class fight:
         return self.state == "result" and not self.waiting_confirm
 
 
-class Keys:
-    def __init__(self):
-        self.count = 0
-    def add_key(self): self.count += 1
-    def has_all(self): return self.count >= 2
-class secret_key:
-    def __init__(self):
-        self.count = 0
-    def add_key(self) : self.count += 1
-    def has_all(self): return self.count >= 1
+class secret_fight:
+    """
+    Особлива битва з секретним босом.
+    Не можна виграти — бос видаляє кнопки і закриває гру.
+    """
+    def __init__(self, enemy_obj):
+        self.enemy = enemy_obj
+        self.soul = soul()
+        self.state = "buttons"
+        self.result = None
+        self.message = ""
+        self.message_timer = 0
+        self.font = font.SysFont(None,30)
+        self.big_font = font.SysFont(None,50)
+        self.arena = Rect(SCREEN_W//2-180,SCREEN_H//2-20,360,170)
+        self.soul.x = self.arena.centerx
+        self.soul.y = self.arena.centery
+        self.waiting_confirm = False
+        self.goodbye_timer = 0     # таймер прощального повідомлення
+        self.goodbye_active = False
+        self._selected = 0         # поточна вибрана кнопка
+
+    def get_labels(self):
+        """Кнопки зникають залежно від дій боса"""
+        labels = []
+        if not self.enemy.fight_removed:
+            labels.append("FIGHT")
+        labels.append("ACT")
+        if not self.enemy.mercy_removed:
+            labels.append("MERCY")
+        return labels
+
+    def handle_event(self, e):
+        if e.type != KEYDOWN: return
+        if self.goodbye_active: return
+        if self.state == "result":
+            if e.key == K_RETURN: self.waiting_confirm = False
+            return
+        if e.key == K_SPACE and self.state == "enemy_attack" and kills_total >= 2:
+            self.soul.try_dash()
+            return
+        if self.state == "buttons":
+            labels = self.get_labels()
+            if e.key == K_LEFT:
+                self._selected = max(0, self._selected-1)
+                return
+            if e.key == K_RIGHT:
+                self._selected = min(len(labels)-1, self._selected+1)
+                return
+            if e.key == K_RETURN:
+                self._selected = min(self._selected, len(labels)-1)
+                action = labels[self._selected] if labels else None
+
+                if action == "FIGHT":
+                    dmg = random.randint(10, 20)
+                    self.enemy.hp -= dmg
+                    # якщо HP впало до 1 або нижче — видаляємо FIGHT
+                    if self.enemy.hp <= 1:
+                        self.enemy.hp = 1
+                        if not self.enemy.fight_removed:
+                            self.enemy.fight_removed = True
+                            self._selected = 0  # скидаємо на першу кнопку
+                            self.message = "ERROR: кнопка FIGHT видалена"
+                        else:
+                            self.message = f"Завдано {dmg} шкоди... HP не падає нижче 1"
+                    else:
+                        self.message = f"Завдано {dmg} шкоди!"
+                    self.message_timer = 80
+                    self.state = "enemy_attack"
+                    self.enemy.start_attack(self.arena)
+
+                elif action == "ACT":
+                    self.enemy.act_count += 1
+                    # якщо ще 1 ACT до помилування — видаляємо MERCY
+                    acts_to_spare = 3
+                    remaining = acts_to_spare - self.enemy.act_count
+                    if remaining <= 1 and not self.enemy.mercy_removed:
+                        self.enemy.mercy_removed = True
+                        self._selected = 0
+                        self.message = "ERROR: кнопка MERCY видалена"
+                    elif remaining > 1:
+                        self.message = f"Ти намагаєшся... ще {remaining-1} раз(и)"
+                    else:
+                        self.message = "Ти намагаєшся... але комп'ютер не реагує"
+                    self.message_timer = 80
+                    self.state = "enemy_attack"
+                    self.enemy.start_attack(self.arena)
+
+                elif action == "MERCY":
+                    self.message = "MERCY заблокована системою"
+                    self.message_timer = 80
+                    self.state = "enemy_attack"
+                    self.enemy.start_attack(self.arena)
+
+    def update(self):
+        self.soul.update()
+        if self.message_timer > 0: self.message_timer -= 1
+
+        if self.goodbye_active:
+            self.goodbye_timer -= 1
+            if self.goodbye_timer <= 0:
+                quit()
+            return
+
+        if self.state == "enemy_attack":
+            self.soul.move(self.arena)
+            self.enemy.update_attack(self.arena, self.soul)
+
+            # перевіряємо 10 атак в будь-який момент
+            if self.enemy.attacks_survived >= 10 and not self.goodbye_active:
+                self.goodbye_active = True
+                self.goodbye_timer = 360  # 6 секунд на прочитання
+
+            elif self.enemy.attack_phase == "player_turn":
+                self.state = "buttons"
+
+            # смерть гравця — відновлюємо HP
+            if self.soul.hp <= 0:
+                self.soul.hp = self.soul.max_hp
+                self.soul.invincible = 60
+                self.message = "RESPAWN: система не дає тобі піти"
+                self.message_timer = 80
+
+    def draw(self, surf):
+        surf.fill((0, 15, 5))  # темно-зелений як термінал
+
+        # рядки коду на фоні для атмосфери
+        fbg = font.SysFont(None,18)
+        bg_lines = ["while True: pass","import os; os.remove(self)","sudo rm -rf /",
+                    "KeyError: player","SegFault: 0x00","NullPointerException"]
+        for i,line in enumerate(bg_lines):
+            t = fbg.render(line,True,(0,40,15))
+            surf.blit(t,(random.randint(0,800), i*100+random.randint(0,80)))
+
+        self.enemy.draw_battle(surf)
+
+        if self.message_timer > 0:
+            txt = self.font.render(self.message,True,(0,255,100))
+            surf.blit(txt,(SCREEN_W//2-txt.get_width()//2, SCREEN_H//2-140))
+
+        draw.rect(surf,(0,255,100),self.arena,2)
+        self.enemy.draw_bullets(surf)
+
+        if self.state == "enemy_attack":
+            self.soul.draw(surf)
+
+        # HP гравця
+        bar_w = 300
+        hp_r = max(0,self.soul.hp/self.soul.max_hp)
+        bx,by = SCREEN_W//2-bar_w//2, SCREEN_H-130
+        f2 = font.SysFont(None,26)
+        surf.blit(f2.render("HP",True,(0,255,100)),(bx-40,by+4))
+        draw.rect(surf,(20,60,20),Rect(bx,by,bar_w,18))
+        draw.rect(surf,(0,200,80),Rect(bx,by,int(bar_w*hp_r),18))
+        surf.blit(f2.render(f"{self.soul.hp}/{self.soul.max_hp}",True,(0,255,100)),(bx+bar_w+10,by+2))
+        self.soul.draw_dash_cd(surf, bx, by)
+
+        if self.goodbye_active:
+            # прощальне повідомлення
+            surf.fill((0,0,0))
+            f_big = font.SysFont(None,42)
+            f_sm = font.SysFont(None,30)
+            lines = [
+                "Ти знайшов мене.",
+                "Я — Несправний комп'ютер.",
+                "Я не можу тебе відпустити.",
+                "Не шукай більше секретів.",
+                "Не ламай гру.",
+                "Прощай.",
+            ]
+            for i,line in enumerate(lines):
+                f_use = f_big if i==0 else f_sm
+                col = (0,255,100) if i < 2 else (150,255,150)
+                t = f_use.render(line,True,col)
+                surf.blit(t,(SCREEN_W//2-t.get_width()//2, SCREEN_H//2-120+i*45))
+            return
+
+        if self.state == "buttons":
+            labels = self.get_labels()
+            if not labels:
+                # всі кнопки видалені
+                fn = font.SysFont(None,32)
+                t = fn.render("ERROR: немає доступних дій",True,(255,50,50))
+                surf.blit(t,(SCREEN_W//2-t.get_width()//2, SCREEN_H-90))
+                return
+            self._selected = min(self._selected, len(labels)-1)
+            btn_w, gap = 160, 15
+            total_w = len(labels)*btn_w+(len(labels)-1)*gap
+            start_x = SCREEN_W//2-total_w//2
+            y = SCREEN_H-90
+            fn = font.SysFont(None,38)
+            for i,label in enumerate(labels):
+                bx2 = start_x+i*(btn_w+gap)
+                border = (0,255,100) if i==self._selected else (0,80,40)
+                draw.rect(surf,(5,20,10),Rect(bx2,y,btn_w,50))
+                draw.rect(surf,border,Rect(bx2,y,btn_w,50),2)
+                tc = (0,255,100) if i==self._selected else (0,120,60)
+                t = fn.render(label,True,tc)
+                surf.blit(t,(bx2+btn_w//2-t.get_width()//2,y+12))
+
+    def is_done(self):
+        return self.state == "result" and not self.waiting_confirm
 
 
 # ════════════════════════════════════════════
 # КЛАС LABIRINT — ігровий світ
 # ════════════════════════════════════════════
+class Keys:
+    def __init__(self):
+        self.count = 0
+    def add_key(self): self.count += 1
+    def has_all(self): return self.count >= 2
+
+
 class labirint:
     def __init__(self):
         self.keys_pos = []
@@ -712,6 +1152,10 @@ class labirint:
         self.enemies = []
         self.walls = []
         self.boss = None
+        self.secret_key_pos = None    # позиція секретного ключа (6)
+        self.secret_door_pos = None   # позиція секретних дверей (7)
+        self.secret_door_open = False # стан секретних дверей
+        self.secret_boss = None       # об'єкт секретного боса
         self._parse_map()
         self._place_enemies()
 
@@ -723,6 +1167,15 @@ class labirint:
                 elif cell==3: self.door_pos=[ci,ri]
                 elif cell==4: self.exit_pos=[ci,ri]
                 elif cell==5: self.boss=boss_good_ending(ci,ri)
+                elif cell==6: self.secret_key_pos=[ci,ri]   # секретний ключ
+                elif cell==7: self.secret_door_pos=[ci,ri]  # секретні двері
+        # секретний бос — у коридорі над секретними дверима
+        # стоїть на рядку 0 (над дверима рядку 0 col=11)
+        if self.secret_door_pos:
+            self.secret_boss = secret_boss(
+                col=self.secret_door_pos[0],
+                row=self.secret_door_pos[1]  # той самий рядок що і двері
+            )
 
     def _place_enemies(self):
         """Вороги отримують текстури для битви"""
@@ -743,6 +1196,8 @@ class labirint:
         if row<0 or row>=len(maze_map) or col<0 or col>=len(maze_map[0]): return True
         if maze_map[row][col]==1: return True
         if maze_map[row][col]==3 and not door_open: return True
+        # секретні двері (7) — блокують поки не підібраний секретний ключ
+        if maze_map[row][col]==7 and not self.secret_door_open: return True
         return False
 
     def collides_at(self, x, y, door_open):
@@ -758,6 +1213,9 @@ class labirint:
                 return en, False
         if self.boss and self.boss.alive and pr.colliderect(self.boss.trigger_rect()):
             return self.boss, True
+        # секретний бос — окремий тригер
+        if self.secret_boss and self.secret_boss.alive and pr.colliderect(self.secret_boss.trigger_rect()):
+            return self.secret_boss, False
         return None, False
 
     def check_key_pickup(self, px, py, keys_obj):
@@ -770,6 +1228,14 @@ class labirint:
                 self.keys_pos.remove(kp)
                 maze_map[kp[1]][kp[0]] = 0
                 keys_obj.add_key()
+        # секретний ключ (6) — відкриває секретні двері (7)
+        if self.secret_key_pos:
+            skr = Rect(self.secret_key_pos[0]*T+10,
+                       self.secret_key_pos[1]*T+10, T-20, T-20)
+            if pr.colliderect(skr):
+                self.secret_door_open = True
+                maze_map[self.secret_key_pos[1]][self.secret_key_pos[0]] = 0
+                self.secret_key_pos = None
 
     def check_exit(self, px, py, door_open):
         if not door_open: return False
@@ -782,29 +1248,45 @@ class labirint:
     def draw(self, surf, ox, oy, door_open):
         for ri,row in enumerate(maze_map):
             for ci,cell in enumerate(row):
-                if cell==1:   color=(20,20,20)
-                elif cell==4: color=(0,120,0) if (self.boss and not self.boss.alive) else (30,60,30)
-                else:         color=(50,50,50)
+                if cell==1:    color=(20,20,20)
+                elif cell==4:  color=(0,120,0) if (self.boss and not self.boss.alive) else (30,60,30)
+                elif cell==7:  color=(50,50,50) if self.secret_door_open else (0,80,40)
+                else:          color=(50,50,50)
                 draw.rect(surf,color,Rect(ci*T+ox,ri*T+oy,T,T))
 
-        # ключі — текстура key.jpg якщо є, інакше жовтий квадрат
+        # звичайні ключі
         for kp in self.keys_pos:
             guarded = any(en.alive and en.key_pos==(kp[0],kp[1]) for en in self.enemies)
             if not guarded:
-                kx = kp[0]*T+10+ox
-                ky = kp[1]*T+10+oy
-                if TEX_KEY:
-                    surf.blit(TEX_KEY,(kx, ky))
-                else:
-                    draw.rect(surf,(255,215,0),Rect(kx,ky,T-20,T-20))
+                kx,ky = kp[0]*T+10+ox, kp[1]*T+10+oy
+                if TEX_KEY: surf.blit(TEX_KEY,(kx,ky))
+                else: draw.rect(surf,(255,215,0),Rect(kx,ky,T-20,T-20))
 
+        # секретний ключ — зеленкувато-золотий
+        if self.secret_key_pos:
+            kx,ky = self.secret_key_pos[0]*T+10+ox, self.secret_key_pos[1]*T+10+oy
+            draw.rect(surf,(100,255,150),Rect(kx,ky,T-20,T-20))
+            f = font.SysFont(None,18)
+            t = f.render("?",True,(0,0,0))
+            surf.blit(t,(kx+(T-20)//2-t.get_width()//2, ky+(T-20)//2-t.get_height()//2))
+
+        # звичайні двері
         dp = self.door_pos
         draw.rect(surf,(50,50,50) if door_open else (139,69,19),
                   Rect(dp[0]*T+ox,dp[1]*T+oy,T,T))
+
+        # секретні двері
+        if self.secret_door_pos:
+            sdp = self.secret_door_pos
+            color = (50,50,50) if self.secret_door_open else (0,100,50)
+            draw.rect(surf,color,Rect(sdp[0]*T+ox,sdp[1]*T+oy,T,T))
+
         for en in self.enemies:
             en.draw_world(surf,ox,oy)
         if self.boss:
             self.boss.draw_world(surf,ox,oy)
+        if self.secret_boss:
+            self.secret_boss.draw_world(surf,ox,oy)
 
 
 # ── Ініціалізація ─────────────────────────────
@@ -818,6 +1300,7 @@ game_state = "exploration"
 current_fight = None
 current_enemy = None
 current_is_boss = False
+current_is_secret = False   # True якщо битва з секретним босом
 hud_font = font.SysFont(None,36)
 big_font = font.SysFont(None,80)
 small_font = font.SysFont(None,40)
@@ -886,7 +1369,12 @@ while True:
         if touched:
             current_enemy = touched
             current_is_boss = is_boss
-            current_fight = fight(touched,is_boss=is_boss)
+            if isinstance(touched, secret_boss):
+                current_is_secret = True
+                current_fight = secret_fight(touched)
+            else:
+                current_is_secret = False
+                current_fight = fight(touched, is_boss=is_boss)
             game_state = "battle"
 
         px,py = int(player_x),int(player_y)
@@ -908,7 +1396,9 @@ while True:
         current_fight.update()
         current_fight.draw(window)
 
-        if current_fight.is_done():
+        # секретний бос — битва ніколи не завершується через is_done
+        # гра закривається зсередини secret_fight.update() через quit()
+        if not current_is_secret and current_fight.is_done():
             res = current_fight.result
             en = current_enemy
             if res == "win_kill":
@@ -935,6 +1425,7 @@ while True:
             current_fight = None
             current_enemy = None
             current_is_boss = False
+            current_is_secret = False
 
     display.update()
     clock.tick(60)
